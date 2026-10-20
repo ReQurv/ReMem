@@ -1,5 +1,6 @@
 node_modules/
 dist/
+*.tgz
 tmp-cjs/
 .env
 .env.local
