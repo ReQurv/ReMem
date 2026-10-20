@@ -178,6 +178,83 @@ The default router is **free** (no LLM calls). LLM usage comes only from:
 knowledge-graph extraction on `store()`, index descriptions on `index()`, and — if
 you enable it — the `llm` router.
 
+## Usage modes
+
+| Mode | For | How | License |
+|------|-----|-----|---------|
+| **Library** | Developers wiring memory into their own agent/framework | `bun add @requrv/remem` → `store()` / `recall()` in your code | GPL-3.0 (or commercial) |
+| **MCP stdio** | Local agents (OpenCode, Claude Code, …) | declare the `remem-mcp` bin in the agent config; the agent spawns it per session | GPL-3.0 (or commercial) |
+| **MCP HTTP (enterprise)** | Companies: one hosted service, one tenant per user + a shared company tenant | `docker compose` (Qdrant + Neo4j + `remem-mcp`) | commercial license for production use — [licensing@requrv.io](mailto:licensing@requrv.io) |
+
+## MCP server
+
+ReMem ships two MCP servers exposing four tools — `mem_remember`, `mem_recall`,
+`mem_index`, `mem_status` — so an agent decides *by itself* when to remember
+and when to retrieve.
+
+### stdio (personal / single-tenant)
+
+The agent spawns the server; one process = one tenant (`TENANT` env, optional).
+Same env config as the library (`.env.example`). **OpenCode**
+(`opencode.json`):
+
+```jsonc
+{
+  "mcp": {
+    "remem": {
+      "type": "local",
+      "command": ["npx", "-y", "-p", "@requrv/remem", "remem-mcp"],
+      "environment": {
+        "QDRANT_URL": "http://localhost:6333",
+        "NEO4J_URI": "bolt://localhost:7687",
+        "NEO4J_USER": "neo4j",
+        "NEO4J_PASSWORD": "changeit",
+        "OPENAI_API_KEY": "sk-…"
+      }
+    }
+  }
+}
+```
+
+**Claude Code**:
+
+```bash
+claude mcp add remem --env QDRANT_URL=http://localhost:6333 --env OPENAI_API_KEY=… \
+  -- npx -y -p @requrv/remem remem-mcp
+```
+
+### HTTP (enterprise / multi-tenant)
+
+One service, one API key per user. Each recall **fuses personal memory with
+company memory** (labeled sections); writes go to the user's own tenant, and
+`scope: "company"` requires the `admin` role.
+
+```bash
+cd deploy && cp .env.example .env   # fill OPENAI_API_KEY + MCP_USERS (one entry per user)
+docker compose -f compose.yaml up -d
+```
+
+Agents then point at `http://<host>:3100/mcp` with their bearer key
+(`Authorization: Bearer <key>`). `GET /healthz` is the liveness probe.
+The HTTP server requires **Bun** (included in the Docker image; for manual
+runs: `bun remem-mcp-http`).
+
+## Self-hosting
+
+1. **Backend**: `docker compose up -d` (repo root) or the full stack in
+   `deploy/` — Qdrant + Neo4j with persistent volumes.
+2. **LLM**: an OpenAI-compatible key (`OPENAI_API_KEY`, default base URL is
+   AI Hive) — or 100% local with Ollama (`EMBEDDER_PROVIDER=ollama`,
+   `CHAT_PROVIDER=ollama`): no content leaves your network.
+3. **Memory**: stdio server per agent (above) — or the enterprise HTTP stack.
+
+## Production & Enterprise
+
+For company deployments (hosted multi-tenant service, production use in
+commercial products, support): ReMem is **dual-licensed** (GPL-3.0 only or
+[ReQurv Commercial License](./LICENSE-COMMERCIAL.md)) — contact
+[licensing@requrv.io](mailto:licensing@requrv.io).
+
 ## Development
 
 ```bash
@@ -204,4 +281,6 @@ development setup, code conventions and the architecture.
 
 ## License
 
-GPL-3.0 — see [LICENSE](./LICENSE).
+Dual-licensed: **GPL-3.0-only** or the **ReQurv Commercial License** (production/
+commercial use — contact [licensing@requrv.io](mailto:licensing@requrv.io)).
+See [LICENSE](./LICENSE) and [LICENSE-COMMERCIAL.md](./LICENSE-COMMERCIAL.md).

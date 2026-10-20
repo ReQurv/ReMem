@@ -18,6 +18,7 @@ export {
   GraphStoreError,
   IndexStoreError,
   RouterError,
+  PermissionError,
 } from './errors'
 
 // Logging

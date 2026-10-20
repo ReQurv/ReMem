@@ -72,9 +72,17 @@ src/stores/      # the three backends:
   graph/         #   Neo4jGraphStore — LLM entity/relation extraction
   index/         #   file/folder map: scanners (local, S3, WebDAV), describer, diff
 src/providers/   # embedder and chat models: OpenAI + Ollama
+src/mcp/         # MCP servers: tools (4), stdio cli (remem-mcp),
+                 #   enterprise HTTP server (Elysia/Bun): tenants, pool, gate
 src/config.ts    # ReMemConfigSchema (zod) + loadConfigFromEnv()
 src/errors.ts    # ReMemError hierarchy
 ```
+
+MCP invariants: `ReMem` stays **single-tenant** — multi-tenancy lives in
+`src/mcp/gate.ts` (pool of per-tenant instances, labeled recall fusion,
+admin-only company writes). The stdio CLI must never write to **stdout**
+(it is the MCP protocol channel; logs go to stderr). The HTTP server requires
+Bun (Elysia); everything else stays Node 18+ compatible.
 
 Data flow: `store()` → `routeWrite()` → `{ vector?, graph? }`; `recall()` →
 `routeRead()` → `{ vector?, graph?, index? }` → each store answers or degrades
@@ -97,6 +105,14 @@ fallback for failure paths (as `LLMRouter` and `LayaRouter` do).
 
 ## Releasing (maintainers)
 
-1. Bump `version` in `package.json`
+1. Bump `version` in `package.json` **and** in `SERVER_INFO` (`src/mcp/server.ts`)
 2. `bun run prepublishOnly` (typecheck + tests + build), then publish
    `@requrv/remem` to npm
+
+## License
+
+ReMem is dual-licensed (GPL-3.0 only **or** ReQurv Commercial License — see
+`LICENSE`). Contributions are released under **GPL-3.0 only**; the commercial
+option applies to the release as made by ReQurv, not to individual
+contributions. Do not add runtime license checks or feature gates: the
+commercial boundary is contractual, see `LICENSE-COMMERCIAL.md`.

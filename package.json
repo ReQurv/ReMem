@@ -3,7 +3,17 @@
   "version": "0.1.0",
   "description": "Decisional memory for AI agents — one entry (store), one exit (recall), with Qdrant, Neo4j and a file/knowledge index.",
   "type": "module",
-  "license": "GPL-3.0-only",
+  "license": "GPL-3.0-only OR LicenseRef-requrv-commercial",
+  "licenses": [
+    {
+      "type": "GPL-3.0-only",
+      "url": "https://www.gnu.org/licenses/gpl-3.0.html"
+    },
+    {
+      "type": "ReQurv Commercial License",
+      "url": "https://github.com/ReQurv/ReMem/blob/main/LICENSE-COMMERCIAL.md"
+    }
+  ],
   "author": "ReQurv",
   "repository": {
     "type": "git",
@@ -32,12 +42,30 @@
         "types": "./dist/index.d.ts",
         "default": "./dist/index.cjs"
       }
+    },
+    "./mcp": {
+      "import": {
+        "types": "./dist/mcp/index.d.ts",
+        "default": "./dist/mcp/index.js"
+      },
+      "require": {
+        "types": "./dist/mcp/index.d.ts",
+        "default": "./dist/mcp/index.cjs"
+      }
     }
+  },
+  "bin": {
+    "remem-mcp": "./dist/remem-mcp.js",
+    "remem-mcp-http": "./dist/remem-mcp-http.js"
   },
   "files": [
     "dist",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "LICENSE-COMMERCIAL.md",
+    "SECURITY.md",
+    "CONTRIBUTING.md",
+    "CODE_OF_CONDUCT.md"
   ],
   "engines": {
     "node": ">=18"
@@ -48,7 +76,10 @@
   "scripts": {
     "clean": "rm -rf dist",
     "build": "bun run build:js && bun run build:types",
-    "build:js": "bun build src/index.ts --outdir dist --format esm --target node --sourcemap --external=@qdrant/js-client-rest --external=neo4j-driver --external=zod --external=@aws-sdk/client-s3 && bun build src/index.ts --outdir tmp-cjs --format cjs --target node --sourcemap --external=@qdrant/js-client-rest --external=neo4j-driver --external=zod --external=@aws-sdk/client-s3 && mv tmp-cjs/index.js dist/index.cjs && mv tmp-cjs/index.js.map dist/index.cjs.map && rm -rf tmp-cjs",
+    "build:js": "bun run build:js:core && bun run build:js:mcp && bun run build:js:cli",
+    "build:js:core": "bun build src/index.ts --outdir dist --format esm --target node --sourcemap --external=@qdrant/js-client-rest --external=neo4j-driver --external=zod --external=@aws-sdk/client-s3 && bun build src/index.ts --outdir tmp-cjs --format cjs --target node --sourcemap --external=@qdrant/js-client-rest --external=neo4j-driver --external=zod --external=@aws-sdk/client-s3 && mv tmp-cjs/index.js dist/index.cjs && mv tmp-cjs/index.js.map dist/index.cjs.map && rm -rf tmp-cjs",
+    "build:js:mcp": "bun build src/mcp/index.ts --outdir dist/mcp --format esm --target node --sourcemap --external=@qdrant/js-client-rest --external=neo4j-driver --external=zod --external=@aws-sdk/client-s3 --external=@modelcontextprotocol/sdk --external=elysia && bun build src/mcp/index.ts --outdir tmp-mcp-cjs --format cjs --target node --sourcemap --external=@qdrant/js-client-rest --external=neo4j-driver --external=zod --external=@aws-sdk/client-s3 --external=@modelcontextprotocol/sdk --external=elysia && mv tmp-mcp-cjs/index.js dist/mcp/index.cjs && mv tmp-mcp-cjs/index.js.map dist/mcp/index.cjs.map && rm -rf tmp-mcp-cjs",
+    "build:js:cli": "bun build src/mcp/cli.ts --outdir tmp-cli --format esm --target node --sourcemap --banner='#!/usr/bin/env node' --external=@qdrant/js-client-rest --external=neo4j-driver --external=zod --external=@aws-sdk/client-s3 --external=@modelcontextprotocol/sdk --external=elysia && mv tmp-cli/cli.js dist/remem-mcp.js && mv tmp-cli/cli.js.map dist/remem-mcp.js.map && rm -rf tmp-cli && bun build src/mcp/http-cli.ts --outdir tmp-http-cli --format esm --target node --sourcemap --banner='#!/usr/bin/env bun' --external=@qdrant/js-client-rest --external=neo4j-driver --external=zod --external=@aws-sdk/client-s3 --external=@modelcontextprotocol/sdk --external=elysia && mv tmp-http-cli/http-cli.js dist/remem-mcp-http.js && mv tmp-http-cli/http-cli.js.map dist/remem-mcp-http.js.map && rm -rf tmp-http-cli",
     "build:types": "tsc -p tsconfig.build.json",
     "prebuild": "bun run clean",
     "typecheck": "tsc --noEmit",
@@ -62,7 +93,9 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.0.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "@qdrant/js-client-rest": "^1.9.0",
+    "elysia": "^1.4.30",
     "neo4j-driver": "^5.26.0",
     "uuid": "^11",
     "zod": "^3.23.8"

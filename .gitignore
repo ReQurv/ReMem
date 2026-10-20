@@ -2,7 +2,11 @@ node_modules/
 dist/
 *.tgz
 tmp-cjs/
+tmp-cli/
+tmp-http-cli/
+tmp-mcp-cjs/
 .env
+deploy/.env
 .env.local
 *.log
 logs/

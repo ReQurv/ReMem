@@ -1,3 +1,19 @@
+                    ReMem — Dual License
+                    ====================
+
+ReMem is dual-licensed. You may use it under EITHER of the following:
+
+1. GNU GENERAL PUBLIC LICENSE, Version 3 (text below) — free for everyone,
+   with copyleft obligations when you distribute the software.
+
+2. ReQurv Commercial License — for companies deploying ReMem in production
+   or otherwise using it commercially (including the multi-tenant MCP HTTP
+   server). Terms are provided at the time of the request.
+   Contact: licensing@requrv.io — see LICENSE-COMMERCIAL.md.
+
+Contributions are released under the GNU GPL v3 only (see CONTRIBUTING.md).
+
+
                     GNU GENERAL PUBLIC LICENSE
                        Version 3, 29 June 2007
 

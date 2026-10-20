@@ -32,3 +32,6 @@ export class IndexStoreError extends ReMemError {}
 
 /** Router (decision model) failed. */
 export class RouterError extends ReMemError {}
+
+/** The principal lacks permission for the requested scope (MCP enterprise mode). */
+export class PermissionError extends ReMemError {}
