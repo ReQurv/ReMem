@@ -194,6 +194,14 @@ bun run dev                 # examples/basic.ts
 Examples in `examples/`: `basic.ts`, `recall-index.ts`, `index-remote.ts`,
 `custom-router.ts`.
 
+## Contributing
+
+Contributions are welcome. See [CONTRIBUTING.md](./CONTRIBUTING.md) for
+development setup, code conventions and the architecture.
+
+- [Code of Conduct](./CODE_OF_CONDUCT.md)
+- [Security policy](./SECURITY.md)
+
 ## License
 
 GPL-3.0 — see [LICENSE](./LICENSE).
