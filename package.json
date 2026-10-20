@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Decisional memory for AI agents — one entry (store), one exit (recall), with Qdrant, Neo4j and a file/knowledge index.",
   "type": "module",
-  "license": "MIT",
+  "license": "GPL-3.0-only",
   "author": "ReQurv",
   "repository": {
     "type": "git",

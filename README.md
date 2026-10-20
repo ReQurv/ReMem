@@ -196,4 +196,4 @@ Examples in `examples/`: `basic.ts`, `recall-index.ts`, `index-remote.ts`,
 
 ## License
 
-MIT — see [LICENSE](./LICENSE).
+GPL-3.0 — see [LICENSE](./LICENSE).
