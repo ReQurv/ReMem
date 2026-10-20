@@ -1,0 +1,78 @@
+{
+  "name": "@requrv/remem",
+  "version": "0.0.0",
+  "description": "Decisional memory for AI agents — one entry (store), one exit (recall), with Qdrant, Neo4j and a file/knowledge index.",
+  "type": "module",
+  "license": "MIT",
+  "author": "ReQurv",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ReQurv/remem.git"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "memory",
+    "rag",
+    "qdrant",
+    "neo4j",
+    "embeddings",
+    "knowledge-graph"
+  ],
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "clean": "rm -rf dist",
+    "build": "bun run build:js && bun run build:types",
+    "build:js": "bun build src/index.ts --outdir dist --format esm --target node --sourcemap --external=@qdrant/js-client-rest --external=neo4j-driver --external=zod --external=@aws-sdk/client-s3 && bun build src/index.ts --outdir tmp-cjs --format cjs --target node --sourcemap --external=@qdrant/js-client-rest --external=neo4j-driver --external=zod --external=@aws-sdk/client-s3 && mv tmp-cjs/index.js dist/index.cjs && mv tmp-cjs/index.js.map dist/index.cjs.map && rm -rf tmp-cjs",
+    "build:types": "tsc -p tsconfig.build.json",
+    "prebuild": "bun run clean",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "test:integration": "bun test ./test/integration",
+    "lint": "bunx eslint .",
+    "dev": "bun run --watch examples/basic.ts",
+    "infra:up": "podman compose up -d",
+    "infra:down": "podman compose down",
+    "prepublishOnly": "bun run typecheck && bun test && bun run build"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.0.0",
+    "@qdrant/js-client-rest": "^1.9.0",
+    "neo4j-driver": "^5.26.0",
+    "uuid": "^11",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "@types/node": "^20.14.0",
+    "bun-types": "^1.4.3",
+    "eslint": "^9.0.0",
+    "typescript": "^5.5.0",
+    "typescript-eslint": "^8.0.0"
+  }
+}

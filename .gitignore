@@ -1,0 +1,10 @@
+node_modules/
+dist/
+tmp-cjs/
+.env
+.env.local
+*.log
+logs/
+.DS_Store
+coverage/
+.turbo/
