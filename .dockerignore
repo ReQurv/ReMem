@@ -1,0 +1,16 @@
+.git
+.gitignore
+node_modules
+dist
+coverage
+logs
+*.log
+*.tgz
+.env
+.env.local
+deploy/.env
+tmp-cjs
+tmp-cli
+tmp-http-cli
+tmp-mcp-cjs
+.DS_Store

@@ -239,14 +239,32 @@ Agents then point at `http://<host>:3100/mcp` with their bearer key
 The HTTP server requires **Bun** (included in the Docker image; for manual
 runs: `bun remem-mcp-http`).
 
+Single machine? The repo-root `docker-compose.yaml` runs this same
+`remem-mcp` server together with the backends in one command — see
+[Self-hosting](#self-hosting).
+
 ## Self-hosting
 
-1. **Backend**: `docker compose up -d` (repo root) or the full stack in
-   `deploy/` — Qdrant + Neo4j with persistent volumes.
-2. **LLM**: an OpenAI-compatible key (`OPENAI_API_KEY`, default base URL is
-   AI Hive) — or 100% local with Ollama (`EMBEDDER_PROVIDER=ollama`,
-   `CHAT_PROVIDER=ollama`): no content leaves your network.
-3. **Memory**: stdio server per agent (above) — or the enterprise HTTP stack.
+One command starts the whole stack — Qdrant + Neo4j + the `remem-mcp` HTTP
+server — with persistent volumes:
+
+```bash
+cp .env.example .env     # fill OPENAI_API_KEY; edit MCP_USERS for >1 user
+docker compose up -d
+```
+
+- **LLM**: an OpenAI-compatible key (`OPENAI_API_KEY`, default base URL is
+  AI Hive) — or 100% local with Ollama (`EMBEDDER_PROVIDER=ollama`,
+  `CHAT_PROVIDER=ollama`, `OLLAMA_BASE_URL=http://host.docker.internal:11434`):
+  no content leaves your network.
+- **Connect**: agents point at `http://localhost:3100/mcp` with
+  `Authorization: Bearer <key>` (the key is in `MCP_USERS`, `rk-local` by
+  default); `GET /healthz` is the liveness probe.
+- **Teams**: for multi-user deployments on a shared host, see the enterprise
+  stack in `deploy/` — same services, team-oriented `MCP_USERS`.
+- **Library**: wire ReMem into your own agent (Quick start above) — it talks
+  to the same Qdrant/Neo4j, also reachable on `localhost` while this stack
+  runs.
 
 ## Production & Enterprise
 
@@ -259,7 +277,7 @@ commercial products, support): ReMem is **dual-licensed** (GPL-3.0 only or
 
 ```bash
 bun install
-podman compose up -d        # Qdrant (6333) + Neo4j (7474/7687) — or: bun run infra:up
+bun run infra:up            # backends only: Qdrant (6333) + Neo4j (7474/7687)
 cp .env.example .env        # then fill in your keys
 
 bun run typecheck

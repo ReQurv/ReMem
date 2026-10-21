@@ -87,7 +87,7 @@
     "test:integration": "bun test ./test/integration",
     "lint": "bunx eslint .",
     "dev": "bun run --watch examples/basic.ts",
-    "infra:up": "podman compose up -d",
+    "infra:up": "podman compose up -d qdrant neo4j",
     "infra:down": "podman compose down",
     "prepublishOnly": "bun run typecheck && bun test && bun run build"
   },
