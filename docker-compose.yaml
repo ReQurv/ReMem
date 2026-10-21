@@ -61,6 +61,8 @@ services:
       # LLM: OpenAI-compatible (default) or local Ollama (see .env.example).
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://hive.requrv.ai/api/v1}
+      OPENAI_EMBED_MODEL: ${OPENAI_EMBED_MODEL:-requrv-embed}
+      OPENAI_CHAT_MODEL: ${OPENAI_CHAT_MODEL:-requrv-small-3.8}
       EMBEDDER_PROVIDER: ${EMBEDDER_PROVIDER:-}
       CHAT_PROVIDER: ${CHAT_PROVIDER:-}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://localhost:11434}
