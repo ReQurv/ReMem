@@ -12,11 +12,11 @@
  * one instance per tenant; the fusion happens HERE, above it.
  */
 import type { IndexMap } from '../stores/index/types'
-import type { Recall, RecallOptions, StoreInput, StoreResult } from '../types'
+import type { Recall, RecallOptions, StoreInput } from '../types'
 import { PermissionError } from '../errors'
 import type { InstancePool } from './pool'
 import type { Principal } from './tenants'
-import type { McpBackend } from './tools'
+import type { McpBackend, RememberOutcome } from './tools'
 
 function describe(recall: Recall): string {
   const degraded = recall.degraded?.length ? `\n(degraded: ${recall.degraded.join(', ')})` : ''
@@ -40,11 +40,17 @@ export class AccessGate implements McpBackend {
     return this.principal.tenant
   }
 
-  async remember(input: StoreInput & { scope?: 'own' | 'company' }): Promise<StoreResult> {
+  /**
+   * Async by contract: resolve the tenant + instance (so a downed backend is
+   * surfaced NOW, as an error) and hand the write to the tenant's background
+   * queue. The LLM-heavy work never blocks the MCP call.
+   */
+  async remember(input: StoreInput & { scope?: 'own' | 'company' }): Promise<RememberOutcome> {
     const tenant = this.writeTenant(input.scope)
     const { scope: _ignored, ...store } = input
     const mem = await this.pool.get(tenant)
-    return mem.store(store)
+    this.pool.enqueue(tenant, () => mem.store(store))
+    return { queued: true }
   }
 
   async recall(query: string, opts?: RecallOptions): Promise<string> {

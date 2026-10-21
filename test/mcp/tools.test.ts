@@ -103,6 +103,17 @@ describe('MCP tools (client over in-memory transport)', () => {
     expect(input).toMatchObject({ content: 'fatto importante', source: 'test', scope: 'company' })
   })
 
+  test('mem_remember renders the async queued ack', async () => {
+    const { backend } = makeBackend({
+      remember: async () => ({ queued: true }),
+    })
+    const { client } = await connectClient(backend)
+    const r = await client.callTool({ name: TOOL_NAMES.remember, arguments: { content: 'x' } })
+    expect(isError(r)).toBeFalse()
+    expect(text(r)).toContain('queued')
+    expect(text(r)).toContain('background')
+  })
+
   test('mem_index renders the map', async () => {
     const { backend } = makeBackend()
     const { client } = await connectClient(backend)

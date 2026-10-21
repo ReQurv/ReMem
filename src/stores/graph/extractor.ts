@@ -54,6 +54,17 @@ Rules:
 
 const EMPTY: ExtractionResult = { entities: [], relations: [] }
 
+/** True when the error chain carries a fetch/AbortSignal timeout. */
+function isTimeout(err: unknown): boolean {
+  let e: unknown = err
+  for (let i = 0; i < 4 && e; i += 1) {
+    if (e instanceof DOMException && e.name === 'TimeoutError') return true
+    if (e instanceof Error && /timed? ?out|timeout/i.test(e.message)) return true
+    e = (e as { cause?: unknown }).cause
+  }
+  return false
+}
+
 /**
  * LLM-based extractor: text → entities/relations. Built on a pluggable
  * `ChatModel`. Uses `completeJson` when available, falls back to `complete`
@@ -82,6 +93,10 @@ export function createExtractor(chat: ChatModel, logger?: Logger): Extractor {
           logger?.debug('extraction: attempt produced no JSON', { attempt: i + 1 })
         } catch (err) {
           logger?.debug('extraction: attempt failed', { attempt: i + 1, err: String(err) })
+          // The fallback call exists for non-JSON output, not for transport
+          // failures: if the model timed out, the next attempt (same model,
+          // same gateway) will time out again — do not double the latency.
+          if (isTimeout(err)) break
         }
       }
 

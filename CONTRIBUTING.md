@@ -80,9 +80,12 @@ src/errors.ts    # ReMemError hierarchy
 
 MCP invariants: `ReMem` stays **single-tenant** — multi-tenancy lives in
 `src/mcp/gate.ts` (pool of per-tenant instances, labeled recall fusion,
-admin-only company writes). The stdio CLI must never write to **stdout**
-(it is the MCP protocol channel; logs go to stderr). The HTTP server requires
-Bun (Elysia); everything else stays Node 18+ compatible.
+admin-only company writes). `mem_remember` is **async** — it acks `queued`
+immediately and the LLM-heavy write runs on the per-tenant background FIFO
+(`src/mcp/queue.ts`); never block a tool call on LLM work. The stdio CLI
+must never write to **stdout** (it is the MCP protocol channel; logs go to
+stderr). The HTTP server requires Bun (Elysia); everything else stays
+Node 18+ compatible.
 
 Data flow: `store()` → `routeWrite()` → `{ vector?, graph? }`; `recall()` →
 `routeRead()` → `{ vector?, graph?, index? }` → each store answers or degrades

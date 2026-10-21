@@ -64,6 +64,17 @@ interface Harness {
   call(key: string, tool: string, args: Record<string, unknown>): Promise<{ text: string; isError?: boolean }>
 }
 
+/** Poll recall (background store) until `needle` appears, or timeout. */
+async function waitForRecall(h: Harness, key: string, query: string, needle: string, timeoutMs = 15_000): Promise<string> {
+  const t0 = Date.now()
+  for (;;) {
+    const r = await h.call(key, 'mem_recall', { query, only: ['vector'] })
+    if (r.text.includes(needle)) return r.text
+    if (Date.now() - t0 > timeoutMs) throw new Error(`recall did not contain "${needle}" within ${timeoutMs}ms`)
+    await new Promise((res) => setTimeout(res, 500))
+  }
+}
+
 describe('MCP HTTP server, multi-tenant (Qdrant live + fake LLM)', () => {
   let pool: InstancePool
   let app: ReturnType<typeof createHttpServer>
@@ -156,18 +167,19 @@ describe('MCP HTTP server, multi-tenant (Qdrant live + fake LLM)', () => {
     expect(body.principals).toBe(3)
   })
 
-  t('alice stores a personal memory, bob cannot see it (tenant isolation)', async () => {
+  t('alice stores a personal memory (async), bob cannot see it (tenant isolation)', async () => {
     const stored = await h.call('rk_alice', 'mem_remember', {
       content: 'Marco preferisce le riunioni la mattina presto',
       source: 'e2e',
     })
+    // Async contract: immediate queued ack, no LLM wait.
     expect(stored.isError).toBeFalsy()
-    expect(stored.text).toContain('vector')
+    expect(stored.text).toContain('queued')
 
-    const aliceRecall = await h.call('rk_alice', 'mem_recall', { query: 'che ore preferisce marco per le riunioni', only: ['vector'] })
-    expect(aliceRecall.text).toContain('## Your memory')
-    expect(aliceRecall.text).toContain('mattina')
+    const aliceRecall = await waitForRecall(h, 'rk_alice', 'che ore preferisce marco per le riunioni', 'mattina')
+    expect(aliceRecall).toContain('## Your memory')
 
+    // bob: the write IS visible to alice, so by now it landed — isolation means bob still cannot see it.
     const bobRecall = await h.call('rk_bob', 'mem_recall', { query: 'che ore preferisce marco per le riunioni', only: ['vector'] })
     expect(bobRecall.text).not.toContain('mattina')
   })
@@ -189,9 +201,8 @@ describe('MCP HTTP server, multi-tenant (Qdrant live + fake LLM)', () => {
 
   t('company memory is fused into recall for every member', async () => {
     for (const key of ['rk_alice', 'rk_bob']) {
-      const r = await h.call(key, 'mem_recall', { query: 'quale policy c è sui permessi aziendali', only: ['vector'] })
-      expect(r.text).toContain('## Company memory')
-      expect(r.text).toContain('biennale')
+      const r = await waitForRecall(h, key, 'quale policy c è sui permessi aziendali', 'biennale')
+      expect(r).toContain('## Company memory')
     }
   })
 

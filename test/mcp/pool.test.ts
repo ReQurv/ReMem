@@ -97,4 +97,32 @@ describe('InstancePool', () => {
     expect(created.every((m) => m.closed)).toBeTrue()
     expect(pool.tenants).toEqual([])
   })
+
+  test('enqueue runs jobs FIFO per tenant, isolates failures', async () => {
+    const { make } = makeFactory()
+    const errors: unknown[] = []
+    const pool = new InstancePool(base, make, { onStoreError: (tenant, err) => errors.push(`${tenant}:${String(err)}`) })
+
+    const order: string[] = []
+    let release: (() => void) | undefined
+    pool.enqueue('a', async () => {
+      order.push('a1-start')
+      await new Promise<void>((r) => (release = r))
+      order.push('a1-end')
+    })
+    pool.enqueue('a', async () => order.push('a2'))
+    pool.enqueue('b', async () => order.push('b1'))
+    pool.enqueue('a', async () => {
+      throw new Error('boom')
+    })
+    pool.enqueue('a', async () => order.push('a3'))
+
+    await new Promise((r) => setTimeout(r, 20))
+    // a2 waits for a1; b1 (other tenant) already ran; a3 waits for a2.
+    expect(order).toEqual(['a1-start', 'b1'])
+    release?.()
+    await new Promise((r) => setTimeout(r, 20))
+    expect(order).toEqual(['a1-start', 'b1', 'a1-end', 'a2', 'a3'])
+    expect(errors).toEqual(['a:Error: boom']) // failure did not kill the chain
+  })
 })

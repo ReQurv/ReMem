@@ -8,6 +8,7 @@
 export { createReMemMcpServer, ReMemBackend, SERVER_INFO } from './server'
 export { registerTools, TOOL_NAMES, type McpBackend } from './tools'
 export { TenantRegistry, type Principal, type PrincipalRole } from './tenants'
-export { InstancePool, type ReMemFactory } from './pool'
+export { InstancePool, type ReMemFactory, type InstancePoolOptions } from './pool'
+export { createFifoQueue, type Enqueue, type StoreRun } from './queue'
 export { AccessGate } from './gate'
 export { createHttpServer, type HttpServerOptions, type ReMemHttpServer } from './http-server'

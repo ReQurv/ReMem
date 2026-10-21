@@ -11,8 +11,9 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { ReMemConfig } from '../config'
 import type { ReMem } from '../core/ReMem'
 import type { IndexMap } from '../stores/index/types'
-import type { RecallOptions, StoreInput, StoreResult } from '../types'
-import { registerTools, type McpBackend } from './tools'
+import type { RecallOptions, StoreInput } from '../types'
+import { createFifoQueue } from './queue'
+import { registerTools, type McpBackend, type RememberOutcome } from './tools'
 
 export const SERVER_INFO = {
   name: 'remem-mcp',
@@ -29,16 +30,24 @@ export function createReMemMcpServer(backend: McpBackend): McpServer {
 
 /** Single-tenant backend: renders `ReMem` calls directly (stdio mode). */
 export class ReMemBackend implements McpBackend {
+  private readonly enqueue = createFifoQueue()
+
   constructor(
     private readonly mem: ReMem,
     private readonly config: ReMemConfig,
   ) {}
 
-  async remember(input: StoreInput & { scope?: 'own' | 'company' }): Promise<StoreResult> {
+  /**
+   * Async by contract (same rationale as `AccessGate.remember`): connect
+   * lazily (a downed backend is surfaced now), then queue the LLM-heavy
+   * write in the background.
+   */
+  async remember(input: StoreInput & { scope?: 'own' | 'company' }): Promise<RememberOutcome> {
     // `scope` has no meaning in single-tenant mode: one instance, one tenant.
     const { scope: _ignored, ...store } = input
     await this.mem.connect()
-    return this.mem.store(store)
+    this.enqueue(() => this.mem.store(store))
+    return { queued: true }
   }
 
   async recall(query: string, opts?: RecallOptions): Promise<string> {

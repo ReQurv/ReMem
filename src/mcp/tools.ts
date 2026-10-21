@@ -13,12 +13,20 @@ import type { IndexMap } from '../stores/index/types'
 import type { RecallOptions, StoreInput, StoreResult } from '../types'
 
 /**
+ * `remember` is ASYNC by design: storing is LLM-heavy (embedding + graph
+ * extraction, tens of seconds for heavy content) and must never block the
+ * agent's conversation. The backend acks `{ queued: true }` immediately and
+ * processes the write in a per-tenant background queue.
+ */
+export type RememberOutcome = StoreResult | { queued: true }
+
+/**
  * The narrow surface the tools need. `recall` returns rendered prompt text
  * (the backend owns rendering/fusion); `remember`/`index` return raw values.
  * Throwing `ReMemError`s is fine — the handler converts them.
  */
 export interface McpBackend {
-  remember(input: StoreInput & { scope?: 'own' | 'company' }): Promise<StoreResult>
+  remember(input: StoreInput & { scope?: 'own' | 'company' }): Promise<RememberOutcome>
   recall(query: string, opts?: RecallOptions): Promise<string>
   index(opts?: { only?: string[]; scope?: 'own' | 'company' }): Promise<IndexMap>
   status(): string
@@ -80,7 +88,7 @@ function handler(fn: (input: Record<string, unknown>) => Promise<string>) {
 export function registerTools(server: McpServer, backend: McpBackend): void {
   server.tool(
     TOOL_NAMES.remember,
-    'Store a memory. The ReMem router decides where it is written (vector store, knowledge graph). Use it for facts, decisions, agreements, preferences — anything worth remembering between conversations.',
+    'Store a memory. The ReMem router decides where it is written (vector store, knowledge graph). Use it for facts, decisions, agreements, preferences — anything worth remembering between conversations. Returns immediately; the write is processed in the background.',
     rememberShape,
     handler(async (input) => {
       const { content, source, collection, metadata, scope } = input as {
@@ -90,7 +98,14 @@ export function registerTools(server: McpServer, backend: McpBackend): void {
         metadata?: Record<string, unknown>
         scope?: 'own' | 'company'
       }
-      const r: StoreResult = await backend.remember({ content, source, collection, metadata, scope })
+      const r: RememberOutcome = await backend.remember({ content, source, collection, metadata, scope })
+      if ('queued' in r) {
+        return (
+          'Memory queued — being stored in the background (embedding + graph ' +
+          'extraction can take a few seconds, more for heavy content). Recall it ' +
+          'again in a moment if you need to confirm it landed.'
+        )
+      }
       return `Stored memory ${r.id} → ${r.writtenTo.join(', ') || '(no target wrote — degraded)'}`
     }),
   )
