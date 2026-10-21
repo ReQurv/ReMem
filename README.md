@@ -18,6 +18,8 @@ an exception.
 
 ## Install
 
+Package: [`@requrv/remem`](https://www.npmjs.com/package/@requrv/remem)
+
 ```bash
 bun add @requrv/remem    # or: npm i @requrv/remem
 ```
