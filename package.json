@@ -1,6 +1,6 @@
 {
   "name": "@requrv/remem",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Decisional memory for AI agents — one entry (store), one exit (recall), with Qdrant, Neo4j and a file/knowledge index.",
   "type": "module",
   "license": "GPL-3.0-only OR LicenseRef-requrv-commercial",

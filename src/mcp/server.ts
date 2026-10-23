@@ -18,7 +18,7 @@ import { registerTools, type McpBackend, type RememberOutcome } from './tools'
 export const SERVER_INFO = {
   name: 'remem-mcp',
   /** Kept in sync with package.json at release time. */
-  version: '0.1.0',
+  version: '0.3.0',
 } as const
 
 /** Build an MCP server exposing the four memory tools over a backend. */
