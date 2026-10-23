@@ -38,8 +38,10 @@ export function buildContext(args: BuildContextArgs): Recall {
 
     if (memories && memories.length > 0) {
       sections.push('## Memory')
+      // The [uuid] is the memory's stable id — the agent passes it to
+      // `forget()` / `mem_forget` to delete exactly this memory.
       for (const m of memories) {
-        sections.push(`- (${m.score.toFixed(2)}) ${memorySnippet(m.payload)}`)
+        sections.push(`- (${m.score.toFixed(2)}) [${m.id}] ${memorySnippet(m.payload)}`)
       }
     }
 

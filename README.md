@@ -12,9 +12,9 @@ sits a **System-1 router** that decides, in a fast typed pass, *where to write* 
 | `graph` | Neo4j | Knowledge graph, populated by LLM entity/relation extraction |
 | `index` | Qdrant (separate collection) | File/folder index with short LLM descriptions — local, S3/MinIO, Nextcloud/WebDAV |
 
-The agent only ever sees two methods. The router routes; the stores execute. Every
-subsystem call degrades gracefully: one store down yields a `degraded` result, never
-an exception.
+The agent only ever sees a few methods — `store()`, `recall()`, `forget()`. The
+router routes; the stores execute. Every subsystem call degrades gracefully: one
+store down yields a `degraded` result, never an exception.
 
 ## Install
 
@@ -40,11 +40,14 @@ const mem = new ReMem({
 await mem.connect()
 
 // One entry point — the router decides where (vector, graph, …).
-await mem.store({ content: 'Marco collabora con Lucia sul progetto Remem' })
+const { id } = await mem.store({ content: 'Marco collabora con Lucia sul progetto Remem' })
 
 // One exit point — the router picks the stores; each answers or degrades.
 const ctx = await mem.recall('chi collabora con Marco?')
 console.log(ctx.toPrompt())   // compact, context-ready block for your agent
+
+// Forget a memory by its id (see `ctx.memories[].id`) — vector + graph.
+await mem.forget(id)
 
 await mem.close()
 ```
@@ -109,6 +112,31 @@ await mem.recall('query', { collections: ['a', 'b'] })         // many (OR)
 await mem.recall('query')                                       // all collections
 ```
 
+## Forgetting memories
+
+`forget(memoryId)` deletes a single memory from the subsystems it landed in.
+The **vector** point is removed by id; the **graph** is cleaned via *provenance*
+— every entity/relation written by `store()` is tagged with the memory id that
+produced it, so `forget` removes exactly the graph data that memory was the
+**last source of** (data still referenced by other memories is kept). It is
+**idempotent** (forgetting an unknown id is a no-op) and **degrades** like
+everything else: one store down yields a `degraded` result, never a throw.
+
+```ts
+// id comes from store() or from any recall: ctx.memories[].id
+await mem.forget(id)
+await mem.forget(id, { only: ['vector'] })   // skip the graph cleanup
+// → { deletedFrom: ['vector','graph'], graph: { entities: 2, relations: 1 } }
+```
+
+`recall()` renders each memory with its id — `toPrompt()` lines look like
+`- (0.87) [<uuid>] snippet…` — so an agent can copy the id straight into
+`forget()` (or the `mem_forget` MCP tool).
+
+> **Note:** provenance is recorded at write time. Memories stored *before* you
+> upgrade will have no graph provenance, so forgetting them removes the vector
+> point but leaves pre-existing graph entities/relations in place.
+
 ## Multi-tenant
 
 Set `tenant` in the config — **one `ReMem` instance = one tenant** — and all data
@@ -160,11 +188,13 @@ await mem.connect()                  // idempotent bootstrap (collections + sche
 await mem.store({ content, source?, collection?, metadata? })  // → { id, writtenTo }
 await mem.recall(query, opts?)       // → Recall
   // opts: { limit?, only?: Subsystem[], collections?: string | string[] }
+await mem.forget(id, opts?)          // → ForgetResult (opts: { only?: Subsystem[] })
 await mem.index(opts?)               // → IndexMap   (opts: { only?: sourceId[] })
 await mem.close()
 ```
 
-`Recall` — `{ memories, graph?, index?, sources, degraded?, toPrompt() }`:
+`Recall` — `{ memories, graph?, index?, sources, degraded?, toPrompt() }`
+(each memory in `memories` carries its `id`):
 `toPrompt()` renders a compact block (`## Memory` / `## Knowledge` / `## Index`)
 ready to inject into your agent's context; degrades are annotated, empty sections
 read `(no results)`.
@@ -190,9 +220,12 @@ you enable it — the `llm` router.
 
 ## MCP server
 
-ReMem ships two MCP servers exposing four tools — `mem_remember`, `mem_recall`,
-`mem_index`, `mem_status` — so an agent decides *by itself* when to remember
-and when to retrieve.
+ReMem ships two MCP servers exposing five tools — `mem_remember`, `mem_recall`,
+`mem_forget`, `mem_index`, `mem_status` — so an agent decides *by itself* when
+to remember, when to retrieve, and when to forget. `mem_forget` takes a memory
+UUID (visible in every `mem_recall` result line) and deletes it from the vector
+store and the knowledge graph; in enterprise mode `scope: "company"` requires
+the `admin` role, like the other writes.
 
 ### stdio (personal / single-tenant)
 

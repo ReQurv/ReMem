@@ -85,4 +85,55 @@ describe('Neo4jGraphStore (integration)', () => {
     const count = await store.query('MATCH (n:Entity) RETURN count(n) AS c')
     expect(Number(count[0].c)).toBeGreaterThanOrEqual(4)
   })
+
+  t('upsertEntity/upsertRelation tag provenance when a memoryId is given (idempotent)', async () => {
+    await store.upsertEntity({ id: 'fm-ada', label: 'Person', name: 'Ada' }, 'mem-1')
+    // 'fm-lucia' is created by the relation's MERGE — provenance must land on it too.
+    await store.upsertRelation({ from: 'fm-ada', to: 'fm-lucia', type: 'knows' }, 'mem-1')
+
+    const a = await store.query('MATCH (n:Entity {id: $id}) RETURN n.sourceMemories AS sm', { id: 'fm-ada' })
+    expect(a[0].sm).toEqual(['mem-1'])
+    const b = await store.query('MATCH (n:Entity {id: $id}) RETURN n.sourceMemories AS sm', { id: 'fm-lucia' })
+    expect(b[0].sm).toEqual(['mem-1'])
+    const r = await store.query(
+      "MATCH (a:Entity {id: 'fm-ada'})-[rel]->(b:Entity {id: 'fm-lucia'}) RETURN rel.sourceMemories AS sm",
+    )
+    expect(r[0].sm).toEqual(['mem-1'])
+
+    // Re-tagging the same memory does not duplicate the id.
+    await store.upsertEntity({ id: 'fm-ada', label: 'Person', name: 'Ada' }, 'mem-1')
+    const a2 = await store.query('MATCH (n:Entity {id: $id}) RETURN n.sourceMemories AS sm', { id: 'fm-ada' })
+    expect(a2[0].sm).toEqual(['mem-1'])
+  })
+
+  t('forgetMemory deletes entities + relation when the memory was the last source', async () => {
+    const res = await store.forgetMemory('mem-1')
+    expect(res).toEqual({ entities: 2, relations: 1 })
+
+    const nodes = await store.query(
+      "MATCH (n:Entity) WHERE n.id IN ['fm-ada', 'fm-lucia'] RETURN count(n) AS c",
+    )
+    expect(Number(nodes[0].c)).toBe(0)
+    const rels = await store.query(
+      "MATCH (a:Entity {id: 'fm-ada'})-[r]->(b:Entity {id: 'fm-lucia'}) RETURN count(r) AS c",
+    )
+    expect(Number(rels[0].c)).toBe(0)
+  })
+
+  t('forgetMemory keeps data still sourced by other memories', async () => {
+    await store.upsertEntity({ id: 'fm-shared', label: 'Person', name: 'Shared' }, 'mem-a')
+    await store.upsertRelation({ from: 'fm-shared', to: 'fm-other', type: 'knows' }, 'mem-a')
+    await store.upsertEntity({ id: 'fm-shared', label: 'Person', name: 'Shared' }, 'mem-b')
+    await store.upsertRelation({ from: 'fm-shared', to: 'fm-other', type: 'knows' }, 'mem-b')
+
+    const res = await store.forgetMemory('mem-a')
+    expect(res).toEqual({ entities: 0, relations: 0 })
+    const sm = await store.query("MATCH (n:Entity {id: 'fm-shared'}) RETURN n.sourceMemories AS sm")
+    expect(sm[0].sm).toEqual(['mem-b'])
+  })
+
+  t('forgetMemory is a no-op for unknown ids', async () => {
+    const res = await store.forgetMemory('never-stored')
+    expect(res).toEqual({ entities: 0, relations: 0 })
+  })
 })

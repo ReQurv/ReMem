@@ -8,14 +8,14 @@ import { createEmbedder, type Embedder } from '../providers/embedder'
 import { createRouter, type Router } from '../router'
 import { createExtractor, type Extractor } from '../stores/graph/extractor'
 import { Neo4jGraphStore } from '../stores/graph/Neo4jGraphStore'
-import type { Entity, GraphInsight, GraphStore, Relation } from '../stores/graph/types'
+import type { Entity, GraphForgetCounts, GraphInsight, GraphStore, Relation } from '../stores/graph/types'
 import { createDescriber } from '../stores/index/describer'
 import { IndexStore } from '../stores/index/store'
 import type { IndexHit, IndexMap } from '../stores/index/types'
 import { createSources, type FileSource } from '../stores/index/sources/factory'
 import { QdrantVectorStore } from '../stores/vector/QdrantVectorStore'
 import type { VectorStore } from '../stores/vector/types'
-import type { Recall, RecallOptions, StoreInput, StoreResult, Subsystem } from '../types'
+import type { ForgetResult, Recall, RecallOptions, StoreInput, StoreResult, Subsystem } from '../types'
 import { buildContext } from './context'
 
 /**
@@ -151,7 +151,12 @@ export class ReMem {
         target: 'graph',
         run: async () => {
           const { entities, relations } = await extractor.extract(input.content)
-          await Promise.all([...entities.map((e) => graph.upsertEntity(e)), ...relations.map((r) => graph.upsertRelation(r))])
+          // Tag every node/edge with this memory's id so `forget(id)` can
+          // later determine which graph data to remove.
+          await Promise.all([
+            ...entities.map((e) => graph.upsertEntity(e, id)),
+            ...relations.map((r) => graph.upsertRelation(r, id)),
+          ])
           written.push('graph')
         },
       })
@@ -208,6 +213,52 @@ export class ReMem {
     })
   }
 
+  /**
+   * Delete a stored memory: removes its vector point and — via provenance —
+   * the graph entities/relations it was the last source of. `opts.only`
+   * restricts the targets (default: both `vector` and `graph`; `index` is
+   * never a forget target). Idempotent: forgetting an unknown id is a no-op.
+   * Each subsystem call is allSettled: one store down degrades the result,
+   * it never throws.
+   */
+  async forget(memoryId: string, opts?: { only?: Subsystem[] }): Promise<ForgetResult> {
+    this.assertConnected()
+    const { logger, vector, graph } = this.deps!
+    // `index` is never a forget target: it is maintained by `index()` only.
+    const targets: Subsystem[] = (opts?.only ?? ['vector', 'graph']).filter((t) => t !== 'index')
+
+    let graphCounts: GraphForgetCounts | undefined
+    const jobs: Array<{ target: Subsystem; run: () => Promise<void> }> = []
+    if (targets.includes('vector')) {
+      jobs.push({ target: 'vector', run: () => vector.delete([memoryId]) })
+    }
+    if (targets.includes('graph')) {
+      jobs.push({
+        target: 'graph',
+        run: async () => {
+          graphCounts = await graph.forgetMemory(memoryId)
+        },
+      })
+    }
+
+    const settled = await Promise.allSettled(jobs.map((j) => j.run()))
+    const deletedFrom: Subsystem[] = []
+    const degraded: Subsystem[] = []
+    settled.forEach((s, i) => {
+      if (s.status === 'fulfilled') deletedFrom.push(jobs[i].target)
+      else {
+        degraded.push(jobs[i].target)
+        logger.warn('forget: subsystem delete failed (degraded)', { target: jobs[i].target, err: String(s.reason) })
+      }
+    })
+
+    return {
+      deletedFrom,
+      graph: graphCounts,
+      degraded: degraded.length > 0 ? degraded : undefined,
+    }
+  }
+
   /** Explicit-only index maintenance (scan + describe the configured FileSources). */
   async index(opts?: { only?: string[] }): Promise<IndexMap> {
     this.assertConnected()
@@ -254,7 +305,7 @@ export class ReMem {
   }
 
   private assertConnected(): void {
-    if (!this.connected) throw new ConnectionError('ReMem is not connected — call connect() before store/recall/index')
+    if (!this.connected) throw new ConnectionError('ReMem is not connected — call connect() before store/recall/forget/index')
   }
 }
 

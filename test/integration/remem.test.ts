@@ -81,6 +81,7 @@ describe('ReMem end-to-end (Qdrant + Neo4j + local index)', () => {
   let vector!: QdrantVectorStore
   let indexVector!: QdrantVectorStore
   let graphUp = false
+  let storedId = ''
   const t = available ? test : test.skip
 
   beforeAll(async () => {
@@ -150,6 +151,7 @@ describe('ReMem end-to-end (Qdrant + Neo4j + local index)', () => {
     const res = await mem.store({ content: 'Marco collabora con Lucia sul progetto Remem' })
     expect(res.writtenTo).toContain('vector')
     if (graphUp) expect(res.writtenTo).toContain('graph')
+    storedId = res.id
   })
 
   t('recall() finds the stored memory via vector', async () => {
@@ -184,6 +186,25 @@ describe('ReMem end-to-end (Qdrant + Neo4j + local index)', () => {
     const hits = Array.isArray(r.index) ? r.index : []
     expect(hits.map((h) => h.path)).toContain('local/docs/guide.md')
     expect(r.toPrompt()).toContain('## Index')
+  })
+
+  t('forget() deletes the memory (vector + graph) and is idempotent', async () => {
+    expect(storedId).toBeTruthy()
+    const res = await mem.forget(storedId)
+    expect(res.deletedFrom).toContain('vector')
+    if (graphUp) {
+      expect(res.deletedFrom).toContain('graph')
+      // single memory → the fake extractor's 2 entities + 1 relation, all last-source
+      expect(res.graph).toEqual({ entities: 2, relations: 1 })
+    }
+    // vector point is gone
+    const r = await mem.recall('cosa ricorda il sistema su Marco?', { only: ['vector'] })
+    expect(r.memories).toHaveLength(0)
+
+    // idempotent: a second forget is a no-op, no throw
+    const again = await mem.forget(storedId)
+    expect(again.deletedFrom).toContain('vector')
+    if (graphUp) expect(again.graph).toEqual({ entities: 0, relations: 0 })
   })
 
   t('full recall (router) degrades gracefully, never throws', async () => {

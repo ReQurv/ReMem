@@ -11,7 +11,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { ReMemConfig } from '../config'
 import type { ReMem } from '../core/ReMem'
 import type { IndexMap } from '../stores/index/types'
-import type { RecallOptions, StoreInput } from '../types'
+import type { ForgetResult, RecallOptions, StoreInput } from '../types'
 import { createFifoQueue } from './queue'
 import { registerTools, type McpBackend, type RememberOutcome } from './tools'
 
@@ -54,6 +54,17 @@ export class ReMemBackend implements McpBackend {
     await this.mem.connect()
     const r = await this.mem.recall(query, opts)
     return r.toPrompt()
+  }
+
+  /**
+   * Synchronous (unlike `remember`): forgetting is cheap (no LLM), so the
+   * caller gets the real delete result, not a queue ack. `scope` has no
+   * meaning in single-tenant mode: one instance, one tenant.
+   */
+  async forget(id: string, scope?: 'own' | 'company'): Promise<ForgetResult> {
+    void scope
+    await this.mem.connect()
+    return this.mem.forget(id)
   }
 
   async index(opts?: { only?: string[]; scope?: 'own' | 'company' }): Promise<IndexMap> {

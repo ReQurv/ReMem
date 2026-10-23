@@ -8,7 +8,7 @@ import type { InstancePool } from '../../src/mcp/pool'
 import { createFifoQueue, type Enqueue, type StoreRun } from '../../src/mcp/queue'
 import type { Principal } from '../../src/mcp/tenants'
 import type { IndexMap } from '../../src/stores/index/types'
-import type { Recall, StoreResult, Subsystem } from '../../src/types'
+import type { ForgetResult, Recall, StoreResult, Subsystem } from '../../src/types'
 
 const base = ReMemConfigSchema.parse({ embedder: { provider: 'ollama' }, chat: { provider: 'ollama' } })
 
@@ -24,10 +24,12 @@ function fakeRecall(text: string, degraded?: Subsystem[]): Recall {
 interface FakeMem {
   name: string
   stores: string[]
+  forgotten: string[]
   indexCalls: number
   fail: boolean
   store(input: unknown): Promise<StoreResult>
   recall(q: string): Promise<Recall>
+  forget(id: string): Promise<ForgetResult>
   index(): Promise<IndexMap>
 }
 
@@ -35,6 +37,7 @@ function memFor(name: string, fail = false): FakeMem {
   const mem: FakeMem = {
     name,
     stores: [],
+    forgotten: [],
     indexCalls: 0,
     fail,
     store: async (input) => {
@@ -44,6 +47,10 @@ function memFor(name: string, fail = false): FakeMem {
     recall: async (q) => {
       if (mem.fail) throw new ConnectionError(`${name} down`)
       return fakeRecall(`${name}: ${q}`)
+    },
+    forget: async (id) => {
+      mem.forgotten.push(id)
+      return { deletedFrom: ['vector'], graph: { entities: 0, relations: 0 } }
     },
     index: async () => {
       mem.indexCalls += 1
@@ -171,6 +178,25 @@ describe('AccessGate', () => {
     const map = await new AccessGate(pool, ops).index({ scope: 'company' })
     expect(map.toPrompt()).toBe('INDEX-corp')
     expect(mems['acme-corp'].indexCalls).toBe(1)
+  })
+
+  test('forget acts on the own tenant by default, synchronously', async () => {
+    const gate = new AccessGate(pool, alice)
+    const res = await gate.forget('mem-42')
+    expect(res.deletedFrom).toEqual(['vector'])
+    expect(mems['acme-alice'].forgotten).toEqual(['mem-42'])
+    expect(mems['acme-corp'].forgotten).toEqual([])
+  })
+
+  test('forget with scope "company" is denied for users', async () => {
+    const gate = new AccessGate(pool, alice)
+    await expect(gate.forget('mem-42', 'company')).rejects.toThrow(PermissionError)
+  })
+
+  test('forget with scope "company" works for admins', async () => {
+    const gate = new AccessGate(pool, ops)
+    await gate.forget('mem-42', 'company')
+    expect(mems['acme-corp'].forgotten).toEqual(['mem-42'])
   })
 
   test('status reports principal, tenants and pool state', () => {

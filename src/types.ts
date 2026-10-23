@@ -1,5 +1,5 @@
 import type { VectorHit } from './stores/vector/types'
-import type { GraphInsight } from './stores/graph/types'
+import type { GraphForgetCounts, GraphInsight } from './stores/graph/types'
 import type { IndexMap, IndexHit } from './stores/index/types'
 
 /** Internal memory subsystems the router routes between. */
@@ -21,6 +21,16 @@ export interface StoreInput {
 export interface StoreResult {
   id: string
   writtenTo: Subsystem[]
+}
+
+/** Result of `forget()`: which subsystems deleted, and what the graph removed. */
+export interface ForgetResult {
+  /** Subsystems that confirmed the delete. */
+  deletedFrom: Subsystem[]
+  /** Graph entities/relations removed (undefined when the graph was not a target or degraded). */
+  graph?: GraphForgetCounts
+  /** Subsystems that were requested but failed to delete (degraded, non-fatal). */
+  degraded?: Subsystem[]
 }
 
 /** UNICO exit point options. */

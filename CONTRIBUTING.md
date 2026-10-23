@@ -72,7 +72,7 @@ src/stores/      # the three backends:
   graph/         #   Neo4jGraphStore — LLM entity/relation extraction
   index/         #   file/folder map: scanners (local, S3, WebDAV), describer, diff
 src/providers/   # embedder and chat models: OpenAI + Ollama
-src/mcp/         # MCP servers: tools (4), stdio cli (remem-mcp),
+src/mcp/         # MCP servers: tools (5), stdio cli (remem-mcp),
                  #   enterprise HTTP server (Elysia/Bun): tenants, pool, gate
 src/config.ts    # ReMemConfigSchema (zod) + loadConfigFromEnv()
 src/errors.ts    # ReMemError hierarchy
@@ -89,7 +89,11 @@ Node 18+ compatible.
 
 Data flow: `store()` → `routeWrite()` → `{ vector?, graph? }`; `recall()` →
 `routeRead()` → `{ vector?, graph?, index? }` → each store answers or degrades
-→ `Recall.toPrompt()`.
+→ `Recall.toPrompt()`. `forget(id)` deletes the vector point by id and the
+graph entities/relations that `id` was the **last source of** (provenance: every
+graph write is tagged with the memory id that produced it, `sourceMemories`);
+shared data survives. `mem_forget` is **synchronous** (cheap, no LLM) — no
+queue, and it returns the real delete result.
 
 The `Router` is a small async interface (`routeWrite`/`routeRead` →
 `RouteDecision`); new routers are additive — implement it, inject via the

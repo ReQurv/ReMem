@@ -5,7 +5,7 @@ import { ReMemConfigSchema } from '../../src/config'
 import { ConnectionError } from '../../src/errors'
 import { noopLogger } from '../../src/logging'
 import type { Router } from '../../src/router/types'
-import type { Entity, GraphInsight } from '../../src/stores/graph/types'
+import type { Entity, GraphForgetCounts, GraphInsight } from '../../src/stores/graph/types'
 import type { IndexHit, IndexMap } from '../../src/stores/index/types'
 import type { VectorHit } from '../../src/stores/vector/types'
 
@@ -21,12 +21,14 @@ interface Call {
 interface DepsOverrides extends Partial<ReMemDeps> {
   calls?: Call[]
   vectorSearch?: () => Promise<VectorHit[]>
-  upsertEntity?: (e: Entity) => Promise<void>
+  upsertEntity?: (e: Entity, memoryId?: string) => Promise<void>
+  forgetMemory?: (id: string) => Promise<GraphForgetCounts>
+  vectorDelete?: (ids: string[]) => Promise<void>
   neighbors?: (id: string, opts?: { depth?: number; limit?: number }) => Promise<GraphInsight>
 }
 
 function makeDeps(overrides: DepsOverrides = {}): ReMemDeps {
-  const { calls = [], vectorSearch, upsertEntity, neighbors, ...rest } = overrides
+  const { calls = [], vectorSearch, upsertEntity, forgetMemory, vectorDelete, neighbors, ...rest } = overrides
   const rec = (name: string) => (...args: unknown[]) => {
     calls.push({ name, args })
   }
@@ -43,7 +45,9 @@ function makeDeps(overrides: DepsOverrides = {}): ReMemDeps {
         return [{ id: 'm1', score: 0.91, payload: { content: 'memoria' } }]
       }),
     list: async () => [],
-    delete: async () => {},
+    delete: vectorDelete ?? (async (ids) => {
+      calls.push({ name: 'vector.delete', args: [ids] })
+    }),
   }
   const indexVector: VectorStoreLike = {
     ensureCollection: async (d) => {
@@ -58,9 +62,15 @@ function makeDeps(overrides: DepsOverrides = {}): ReMemDeps {
     ensureSchema: async () => {
       calls.push({ name: 'graph.ensureSchema', args: [] })
     },
-    upsertEntity: upsertEntity ?? ((e) => Promise.resolve(rec('graph.upsertEntity')(e))),
-    upsertRelation: (r) => Promise.resolve(rec('graph.upsertRelation')(r)),
+    upsertEntity: upsertEntity ?? ((e, mid) => Promise.resolve(rec('graph.upsertEntity')(e, mid))),
+    upsertRelation: (r, mid) => Promise.resolve(rec('graph.upsertRelation')(r, mid)),
     query: async () => [],
+    forgetMemory:
+      forgetMemory ??
+      (async (id) => {
+        calls.push({ name: 'graph.forgetMemory', args: [id] })
+        return { entities: 2, relations: 1 }
+      }),
     neighbors: neighbors ?? (async () => ({ entities: [], relations: [] })),
     close: async () => {
       calls.push({ name: 'graph.close', args: [] })
@@ -151,6 +161,11 @@ describe('ReMem (unit, mocked deps)', () => {
     const payload = upsert.args[2] as { content: string; metadata: Record<string, unknown> }
     expect(payload.content).toBe('Marco collabora con Luca')
     expect(payload.metadata.source).toBe('local')
+    // graph provenance: the memory id is tagged on every node/edge
+    const ent = calls.find((c) => c.name === 'graph.upsertEntity')!
+    expect(ent.args).toEqual([{ id: 'marco', label: 'Person', name: 'Marco' }, res.id])
+    const rel = calls.find((c) => c.name === 'graph.upsertRelation')!
+    expect(rel.args[1]).toBe(res.id)
   })
 
   test('store() scopes the payload with config tenant + input collection', async () => {
@@ -255,6 +270,8 @@ describe('ReMem (unit, mocked deps)', () => {
     expect(p).toContain('## Memory')
     expect(p).toContain('## Index')
     expect(p).not.toContain('## Knowledge')
+    // each memory line carries its id, so the caller can target it with forget()
+    expect(p).toContain('[m1]')
   })
 
   test('recall() opts.only bypasses the router', async () => {
@@ -306,5 +323,50 @@ describe('ReMem (unit, mocked deps)', () => {
     await mem.close()
     expect(calls.map((c) => c.name)).toContain('graph.close')
     await expect(mem.store({ content: 'x' })).rejects.toThrow(ConnectionError)
+  })
+
+  test('forget() before connect() → ConnectionError', async () => {
+    const mem = new ReMem(CONFIG, { deps: makeDeps() })
+    await expect(mem.forget('5b3f0c0e-1234-7654-89ab-cdef01234567')).rejects.toThrow(ConnectionError)
+  })
+
+  test('forget() deletes the vector point + graph provenance, returns counts', async () => {
+    const calls: Call[] = []
+    const mem = new ReMem(CONFIG, { deps: makeDeps({ calls }) })
+    await mem.connect()
+    const res = await mem.forget('5b3f0c0e-1234-7654-89ab-cdef01234567')
+
+    expect(res.deletedFrom).toEqual(['vector', 'graph'])
+    expect(res.graph).toEqual({ entities: 2, relations: 1 })
+    expect(res.degraded).toBeUndefined()
+    expect(calls.find((c) => c.name === 'vector.delete')?.args).toEqual([
+      ['5b3f0c0e-1234-7654-89ab-cdef01234567'],
+    ])
+    expect(calls.find((c) => c.name === 'graph.forgetMemory')?.args).toEqual(['5b3f0c0e-1234-7654-89ab-cdef01234567'])
+  })
+
+  test('forget({ only: ["vector"] }) skips the graph', async () => {
+    const calls: Call[] = []
+    const mem = new ReMem(CONFIG, { deps: makeDeps({ calls }) })
+    await mem.connect()
+    const res = await mem.forget('5b3f0c0e-1234-7654-89ab-cdef01234567', { only: ['vector'] })
+    expect(res.deletedFrom).toEqual(['vector'])
+    expect(res.graph).toBeUndefined()
+    expect(calls.map((c) => c.name)).not.toContain('graph.forgetMemory')
+  })
+
+  test('forget(): a failing subsystem degrades — partial deletedFrom, no throw', async () => {
+    const mem = new ReMem(CONFIG, {
+      deps: makeDeps({
+        vectorDelete: async () => {
+          throw new Error('qdrant down')
+        },
+      }),
+    })
+    await mem.connect()
+    const res = await mem.forget('5b3f0c0e-1234-7654-89ab-cdef01234567')
+    expect(res.deletedFrom).toEqual(['graph'])
+    expect(res.degraded).toEqual(['vector'])
+    expect(res.graph).toEqual({ entities: 2, relations: 1 })
   })
 })

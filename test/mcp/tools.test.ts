@@ -19,6 +19,10 @@ function makeBackend(overrides: Partial<McpBackend> = {}) {
       calls.push(['recall', { query, opts }])
       return `RECALL[${query}]`
     },
+    forget: async (id, scope) => {
+      calls.push(['forget', { id, scope }])
+      return { deletedFrom: ['vector', 'graph'], graph: { entities: 2, relations: 1 } }
+    },
     index: async (opts) => {
       calls.push(['index', opts])
       return { toPrompt: () => 'INDEX-MAP' } as unknown as IndexMap
@@ -64,11 +68,11 @@ function isError(result: unknown): boolean {
 }
 
 describe('MCP tools (client over in-memory transport)', () => {
-  test('exposes the four tools', async () => {
+  test('exposes the five tools', async () => {
     const { client } = await connectClient(makeBackend().backend)
     const tools = await client.listTools()
     expect(tools.tools.map((t) => t.name).sort()).toEqual(
-      [TOOL_NAMES.remember, TOOL_NAMES.recall, TOOL_NAMES.index, TOOL_NAMES.status].sort(),
+      [TOOL_NAMES.remember, TOOL_NAMES.recall, TOOL_NAMES.forget, TOOL_NAMES.index, TOOL_NAMES.status].sort(),
     )
   })
 
@@ -112,6 +116,31 @@ describe('MCP tools (client over in-memory transport)', () => {
     expect(isError(r)).toBeFalse()
     expect(text(r)).toContain('queued')
     expect(text(r)).toContain('background')
+  })
+
+  test('mem_forget forwards id + scope and renders what was removed', async () => {
+    const { backend, calls } = makeBackend()
+    const { client } = await connectClient(backend)
+
+    const r = await client.callTool({
+      name: TOOL_NAMES.forget,
+      arguments: { id: '5b3f0c0e-1234-7654-89ab-cdef01234567', scope: 'company' },
+    })
+    expect(isError(r)).toBeFalse()
+    expect(text(r)).toContain('5b3f0c0e-1234-7654-89ab-cdef01234567')
+    expect(text(r)).toContain('vector, graph')
+    expect(text(r)).toContain('-2 entities, -1 relations')
+    const input = calls.find(([n]) => n === 'forget')?.[1] as Record<string, unknown>
+    expect(input).toEqual({ id: '5b3f0c0e-1234-7654-89ab-cdef01234567', scope: 'company' })
+  })
+
+  test('mem_forget renders the degraded outcome when nothing was deleted', async () => {
+    const { backend } = makeBackend({
+      forget: async () => ({ deletedFrom: [], degraded: ['vector', 'graph'] }),
+    })
+    const { client } = await connectClient(backend)
+    const r = await client.callTool({ name: TOOL_NAMES.forget, arguments: { id: 'x' } })
+    expect(text(r)).toContain('(no subsystem deleted — degraded)')
   })
 
   test('mem_index renders the map', async () => {

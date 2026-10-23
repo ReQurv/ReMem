@@ -1,16 +1,16 @@
 /**
- * MCP tool layer: the four tools (`mem_remember`, `mem_recall`, `mem_index`,
- * `mem_status`) as a thin adapter over a `McpBackend`. The backend decides
- * HOW memories are read/written (single-tenant `ReMem` for stdio mode, the
- * `AccessGate` fusion for the multi-tenant HTTP server) — the tool surface
- * and its error handling stay identical in both.
+ * MCP tool layer: the five tools (`mem_remember`, `mem_recall`, `mem_forget`,
+ * `mem_index`, `mem_status`) as a thin adapter over a `McpBackend`. The
+ * backend decides HOW memories are read/written (single-tenant `ReMem` for
+ * stdio mode, the `AccessGate` fusion for the multi-tenant HTTP server) — the
+ * tool surface and its error handling stay identical in both.
  */
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 
 import { ReMemError } from '../errors'
 import type { IndexMap } from '../stores/index/types'
-import type { RecallOptions, StoreInput, StoreResult } from '../types'
+import type { ForgetResult, RecallOptions, StoreInput, StoreResult } from '../types'
 
 /**
  * `remember` is ASYNC by design: storing is LLM-heavy (embedding + graph
@@ -28,6 +28,8 @@ export type RememberOutcome = StoreResult | { queued: true }
 export interface McpBackend {
   remember(input: StoreInput & { scope?: 'own' | 'company' }): Promise<RememberOutcome>
   recall(query: string, opts?: RecallOptions): Promise<string>
+  /** Delete a memory by its UUID (vector + graph via provenance). Synchronous. */
+  forget(id: string, scope?: 'own' | 'company'): Promise<ForgetResult>
   index(opts?: { only?: string[]; scope?: 'own' | 'company' }): Promise<IndexMap>
   status(): string
 }
@@ -35,6 +37,7 @@ export interface McpBackend {
 export const TOOL_NAMES = {
   remember: 'mem_remember',
   recall: 'mem_recall',
+  forget: 'mem_forget',
   index: 'mem_index',
   status: 'mem_status',
 } as const
@@ -65,6 +68,14 @@ const recallShape = {
     .optional()
     .describe('Restrict to logical collections (OR semantics).'),
   limit: z.number().int().min(1).max(50).optional().describe('Max memories per subsystem (default 5).'),
+}
+
+const forgetShape = {
+  id: z
+    .string()
+    .min(1)
+    .describe('The memory UUID to forget — copy it from a mem_recall result (each memory line shows its [uuid]).'),
+  scope: scopeEnum,
 }
 
 const indexShape = {
@@ -122,6 +133,21 @@ export function registerTools(server: McpServer, backend: McpBackend): void {
         limit?: number
       }
       return backend.recall(query, { only, collections, limit })
+    }),
+  )
+
+  server.tool(
+    TOOL_NAMES.forget,
+    'Forget (delete) a stored memory by its UUID: removes it from the vector store and from the knowledge graph (via provenance). Use it when the user asks to remove, delete, or forget something previously remembered. First run mem_recall to find the memory id (each memory line shows its [uuid]). Forgetting an unknown id is a no-op. Synchronous: returns what was removed.',
+    forgetShape,
+    handler(async (input) => {
+      const { id, scope } = input as { id: string; scope?: 'own' | 'company' }
+      const r: ForgetResult = await backend.forget(id, scope)
+      const parts = [
+        `Forgotten ${id} — removed from ${r.deletedFrom.join(', ') || '(no subsystem deleted — degraded)'}`,
+      ]
+      if (r.graph) parts.push(`graph: -${r.graph.entities} entities, -${r.graph.relations} relations`)
+      return parts.join(' — ')
     }),
   )
 

@@ -4,15 +4,15 @@
  * - `mem_recall` reads BOTH tenants (personal + company) and fuses the two
  *   prompt blocks, labeled. Read-fusion is unconditional: it is the whole
  *   point of the company tenant.
- * - `mem_remember` / `mem_index` write to the principal's OWN tenant by
- *   default. `scope: 'company'` requires the `admin` role.
+ * - `mem_remember` / `mem_forget` / `mem_index` act on the principal's OWN
+ *   tenant by default. `scope: 'company'` requires the `admin` role.
  * - There is no way to address a tenant other than your own or your company's.
  *
  * The single-tenant invariant of `ReMem` itself stays intact: the pool holds
  * one instance per tenant; the fusion happens HERE, above it.
  */
 import type { IndexMap } from '../stores/index/types'
-import type { Recall, RecallOptions, StoreInput } from '../types'
+import type { ForgetResult, Recall, RecallOptions, StoreInput } from '../types'
 import { PermissionError } from '../errors'
 import type { InstancePool } from './pool'
 import type { Principal } from './tenants'
@@ -71,6 +71,17 @@ export class AccessGate implements McpBackend {
     if (companyR.status === 'fulfilled') sections.push(`## Company memory\n\n${describe(companyR.value)}`)
     if (ownR.status === 'fulfilled') sections.push(`## Your memory\n\n${describe(ownR.value)}`)
     return sections.join('\n\n')
+  }
+
+  /**
+   * Synchronous (unlike `remember`): forgetting is cheap (no LLM), so the
+   * caller gets the real delete result. Scope policy mirrors the writes:
+   * own tenant by default, `company` requires the admin role.
+   */
+  async forget(id: string, scope?: 'own' | 'company'): Promise<ForgetResult> {
+    const tenant = this.writeTenant(scope)
+    const mem = await this.pool.get(tenant)
+    return mem.forget(id)
   }
 
   async index(opts?: { only?: string[]; scope?: 'own' | 'company' }): Promise<IndexMap> {

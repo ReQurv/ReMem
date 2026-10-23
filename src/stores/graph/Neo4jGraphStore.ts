@@ -1,5 +1,6 @@
 import neo4j, {
   auth,
+  isInt,
   type Driver,
   type Node as Neo4jNode,
   type Record as Neo4jRecord,
@@ -9,7 +10,7 @@ import neo4j, {
 import { ConnectionError, GraphStoreError } from '../../errors'
 import type { Logger } from '../../logging'
 import { isStorableValue, sanitizeLabel, sanitizePropertyKey, sanitizeType } from './sanitize'
-import type { Entity, GraphInsight, GraphStore, Relation } from './types'
+import type { Entity, GraphForgetCounts, GraphInsight, GraphStore, Relation } from './types'
 
 export interface Neo4jGraphStoreOpts {
   uri: string
@@ -56,9 +57,11 @@ export class Neo4jGraphStore implements GraphStore {
   async ensureSchema(): Promise<void> {
     await this.run('CREATE CONSTRAINT entity_id IF NOT EXISTS FOR (e:Entity) REQUIRE e.id IS UNIQUE')
     await this.run('CREATE INDEX entity_name IF NOT EXISTS FOR (e:Entity) ON (e.name)')
+    // Point lookup for `forgetMemory` ($id IN sourceMemories).
+    await this.run('CREATE INDEX entity_source_memories IF NOT EXISTS FOR (e:Entity) ON (e.sourceMemories)')
   }
 
-  async upsertEntity(e: Entity): Promise<void> {
+  async upsertEntity(e: Entity, memoryId?: string): Promise<void> {
     const label = sanitizeLabel(e.label)
     // Neo4j properties must be primitives (or arrays thereof): set them one by
     // one under sanitized keys; nested values are dropped.
@@ -70,6 +73,11 @@ export class Neo4jGraphStore implements GraphStore {
       sets.push(`n.${k} = $p_${k}`)
       params[`p_${k}`] = value
     }
+    // Provenance last, so it wins over any (unlikely) LLM property with the same key.
+    if (memoryId) {
+      sets.push(provenanceSet('n', '$mid'))
+      params.mid = memoryId
+    }
     await this.run(
       `MERGE (n:Entity {id: $id})
        SET n.name = $name${sets.length ? `, ${sets.join(', ')}` : ''}
@@ -78,7 +86,7 @@ export class Neo4jGraphStore implements GraphStore {
     )
   }
 
-  async upsertRelation(r: Relation): Promise<void> {
+  async upsertRelation(r: Relation, memoryId?: string): Promise<void> {
     const type = sanitizeType(r.type)
     const sets: string[] = []
     const params: Record<string, unknown> = { from: this.scopedId(r.from), to: this.scopedId(r.to) }
@@ -87,6 +95,12 @@ export class Neo4jGraphStore implements GraphStore {
       const k = sanitizePropertyKey(key)
       sets.push(`rel.${k} = $p_${k}`)
       params[`p_${k}`] = value
+    }
+    if (memoryId) {
+      // Tag the edge AND its endpoints: the MERGE above may create bare nodes,
+      // and `forgetMemory` can only clean up nodes that carry provenance.
+      params.mid = memoryId
+      sets.push(provenanceSet('rel', '$mid'), provenanceSet('a', '$mid'), provenanceSet('b', '$mid'))
     }
     await this.run(
       `MERGE (a:Entity {id: $from})
@@ -131,6 +145,30 @@ export class Neo4jGraphStore implements GraphStore {
     return { entities, relations }
   }
 
+  async forgetMemory(memoryId: string): Promise<GraphForgetCounts> {
+    // Relations first: dropping an edge can leave its endpoints orphaned, and
+    // the entity pass below only deletes nodes with no remaining edges.
+    const relRows = await this.run(
+      `MATCH ()-[r]->()
+        WHERE $id IN r.sourceMemories
+        SET r.sourceMemories = [x IN r.sourceMemories WHERE x <> $id]
+        WITH r WHERE size(r.sourceMemories) = 0
+        DELETE r
+        RETURN count(r) AS n`,
+      { id: memoryId },
+    )
+    const entRows = await this.run(
+      `MATCH (n:Entity)
+        WHERE $id IN n.sourceMemories
+        SET n.sourceMemories = [x IN n.sourceMemories WHERE x <> $id]
+        WITH n WHERE size(n.sourceMemories) = 0 AND NOT (n)--()
+        DELETE n
+        RETURN count(n) AS n`,
+      { id: memoryId },
+    )
+    return { relations: countOf(relRows), entities: countOf(entRows) }
+  }
+
   /** Close the underlying driver. */
   async close(): Promise<void> {
     await this.driver.close()
@@ -149,6 +187,25 @@ export class Neo4jGraphStore implements GraphStore {
       await session.close().catch(() => {})
     }
   }
+}
+
+/**
+ * SET clause appending `$param` to the `sourceMemories` provenance list of
+ * `varName` (idempotent: never records the same memory id twice).
+ */
+function provenanceSet(varName: string, param: string): string {
+  return `${varName}.sourceMemories = CASE
+          WHEN ${varName}.sourceMemories IS NULL THEN [${param}]
+          WHEN ${param} IN ${varName}.sourceMemories THEN ${varName}.sourceMemories
+          ELSE ${varName}.sourceMemories + [${param}]
+        END`
+}
+
+/** Read the `n` count column of a Cypher result (0 for empty/absent). */
+function countOf(records: Neo4jRecord[]): number {
+  const v = records[0]?.get('n')
+  // The driver returns counts as a Long-style Integer object, not a JS number.
+  return isInt(v) ? v.toInt() : typeof v === 'number' ? v : 0
 }
 
 function toEntity(node: Neo4jNode, unscope: (id: string) => string): Entity {
