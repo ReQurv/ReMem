@@ -278,6 +278,31 @@ Single machine? The repo-root `docker-compose.yaml` runs this same
 `remem-mcp` server together with the backends in one command — see
 [Self-hosting](#self-hosting).
 
+## Agent skill
+
+The five MCP tools are only as useful as the agent's awareness of *when* to
+use them. ReMem ships a harness-agnostic **Agent Skill**
+(`skills/remem/SKILL.md`) — a guide telling the agent when to remember,
+recall, forget, index, and check status, what never to store, and how to read
+a `mem_recall` result.
+
+Install it into your agent's skills directory with the bundled CLI:
+
+```bash
+# Claude Code → .claude/skills/remem/           (or ~/.claude/skills/remem/ with --scope global)
+# OpenCode    → .opencode/skills/remem/          (or ~/.config/opencode/skills/remem/ with --scope global)
+npx -y -p @requrv/remem remem-skill install
+
+remem-skill install --harness claude-code --scope global   # explicit target
+remem-skill list        # target paths + installed state
+remem-skill show        # print the skill
+```
+
+Without `--harness`, the installer detects which harness is present (project
+marker in the project root, or home marker for `--scope global`) and installs
+into all of them. An existing customized copy is left alone — use `--force`
+to overwrite.
+
 ## Self-hosting
 
 One command starts the whole stack — Qdrant + Neo4j + the `remem-mcp` HTTP

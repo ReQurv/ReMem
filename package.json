@@ -56,10 +56,12 @@
   },
   "bin": {
     "remem-mcp": "./dist/remem-mcp.js",
-    "remem-mcp-http": "./dist/remem-mcp-http.js"
+    "remem-mcp-http": "./dist/remem-mcp-http.js",
+    "remem-skill": "./dist/remem-skill.js"
   },
   "files": [
     "dist",
+    "skills",
     "README.md",
     "LICENSE",
     "LICENSE-COMMERCIAL.md",
@@ -76,10 +78,11 @@
   "scripts": {
     "clean": "rm -rf dist",
     "build": "bun run build:js && bun run build:types",
-    "build:js": "bun run build:js:core && bun run build:js:mcp && bun run build:js:cli",
+    "build:js": "bun run build:js:core && bun run build:js:mcp && bun run build:js:cli && bun run build:js:skill",
     "build:js:core": "bun build src/index.ts --outdir dist --format esm --target node --sourcemap --external=@qdrant/js-client-rest --external=neo4j-driver --external=zod --external=@aws-sdk/client-s3 && bun build src/index.ts --outdir tmp-cjs --format cjs --target node --sourcemap --external=@qdrant/js-client-rest --external=neo4j-driver --external=zod --external=@aws-sdk/client-s3 && mv tmp-cjs/index.js dist/index.cjs && mv tmp-cjs/index.js.map dist/index.cjs.map && rm -rf tmp-cjs",
     "build:js:mcp": "bun build src/mcp/index.ts --outdir dist/mcp --format esm --target node --sourcemap --external=@qdrant/js-client-rest --external=neo4j-driver --external=zod --external=@aws-sdk/client-s3 --external=@modelcontextprotocol/sdk --external=elysia && bun build src/mcp/index.ts --outdir tmp-mcp-cjs --format cjs --target node --sourcemap --external=@qdrant/js-client-rest --external=neo4j-driver --external=zod --external=@aws-sdk/client-s3 --external=@modelcontextprotocol/sdk --external=elysia && mv tmp-mcp-cjs/index.js dist/mcp/index.cjs && mv tmp-mcp-cjs/index.js.map dist/mcp/index.cjs.map && rm -rf tmp-mcp-cjs",
     "build:js:cli": "bun build src/mcp/cli.ts --outdir tmp-cli --format esm --target node --sourcemap --banner='#!/usr/bin/env node' --external=@qdrant/js-client-rest --external=neo4j-driver --external=zod --external=@aws-sdk/client-s3 --external=@modelcontextprotocol/sdk --external=elysia && mv tmp-cli/cli.js dist/remem-mcp.js && mv tmp-cli/cli.js.map dist/remem-mcp.js.map && rm -rf tmp-cli && bun build src/mcp/http-cli.ts --outdir tmp-http-cli --format esm --target node --sourcemap --banner='#!/usr/bin/env bun' --external=@qdrant/js-client-rest --external=neo4j-driver --external=zod --external=@aws-sdk/client-s3 --external=@modelcontextprotocol/sdk --external=elysia && mv tmp-http-cli/http-cli.js dist/remem-mcp-http.js && mv tmp-http-cli/http-cli.js.map dist/remem-mcp-http.js.map && rm -rf tmp-http-cli",
+    "build:js:skill": "bun build src/skill/cli.ts --outdir tmp-skill --format esm --target node --sourcemap --banner='#!/usr/bin/env node' && mv tmp-skill/cli.js dist/remem-skill.js && mv tmp-skill/cli.js.map dist/remem-skill.js.map && rm -rf tmp-skill",
     "build:types": "tsc -p tsconfig.build.json",
     "prebuild": "bun run clean",
     "typecheck": "tsc --noEmit",
